@@ -133,6 +133,11 @@ let scalePointsToArea (area:DrawingArea) (padding:float) (points : Point2D []) =
 
     Array.map mapPoints points
 
+let getYFlippedTextString (point:Point2D) (message:string) =
+    let xStr = string(point.X)
+    let yStr = string(point.Y)
+    "<g transform = \"translate(" + xStr + ", " + yStr +  ")\"><text transform = \"scale(1,-1)\"x=" + "0" + " y=" +  "0" + " fill=" + (inQuotes "black") + ">" + message + "</text>\n></g>"
+
 let pointsToSvgString (area:DrawingArea) (points : Point []) (skipAxis:Axis) =
     let padding = 10.0
     let w = area.Width
@@ -164,9 +169,18 @@ let pointsToSvgString (area:DrawingArea) (points : Point []) (skipAxis:Axis) =
         let mid = (first + second) * 0.5
         // Draw line from first to second
         pointsLines  <- pointsLines + "<line x1=" + (quote first.X) +  " y1=" + (quote first.Y) +  " x2=" +  (quote second.X) + " y2=" +  (quote second.Y) + " style=" + (inQuotes "stroke:rgb(255,0,0);stroke-width:1")+ "/>" 
-        pointsLines <- pointsLines + "<text x=" + (quote mid.X) + " y=" +  (quote mid.Y) + " fill=" + (inQuotes "black") + ">" + string(i) + "</text>\n"
+        pointsLines <- pointsLines + (getYFlippedTextString mid (string(i)))+ "\n"
 
-    "<svg " + widthParam.DeclString()  + " " + heightParam.DeclString() + ">\n" + pointsText + "\n" + pointsLines + "\n</svg>"
+    let hstring = string(h)
+    let transformStart = "<g transform=\"translate(0," + hstring + ")\"> <g transform=\"scale(1,-1)\">"
+    let transformEnd = "<\g><\g>"
+
+    "<svg " + widthParam.DeclString()  + " " +  heightParam.DeclString() + ">\n" + 
+        transformStart +
+        pointsText + "\n" + 
+        pointsLines + 
+        transformEnd +
+        "\n</svg>"
 
 let wrapInHtml elemIn = 
     "<html>\n<body>\n" + elemIn + "</body>\n</html>" 
