@@ -1,2 +1,10 @@
 desktop_utilities/obj/*
 desktop_utilities/bin/*
+tktest/OpenTKTestApp/bin/*
+tktest/OpenTKTestApp/obj/*
+xnatest/directx01/bin/*
+xnatest/FsXna01/bin/*
+xnatest/directx01/obj/*
+xnatest/opengl01/obj/*
+xnatest/FsXna01/obj/*
+xnatest/opengl01/bin/WindowsGL/Debug/*
