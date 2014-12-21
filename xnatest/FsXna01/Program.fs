@@ -221,6 +221,7 @@ let main argv =
 //    let game = new XnaSample02()
 //    let game = new XnaSample03()
 //    let game = new XnaSample04()
-    let game = new ModelingTest01()
+//    let game = new ModelingTest01()
+    let game = new ModelingTest02()
     game.Run()
     0 // return an integer exit code
