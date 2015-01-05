@@ -11,7 +11,7 @@ open Microsoft.Xna.Framework.Storage
 open Microsoft.Xna.Framework.GamerServices
 
 open xnabook1
-open ModelingPrimitivesTest01
+open Editor
 
 //
 // Icosahedron game

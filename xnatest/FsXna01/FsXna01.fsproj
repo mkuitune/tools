@@ -51,6 +51,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="GeometryUtils.fs" />
+    <Compile Include="Csg.fs" />
     <Compile Include="ModelingPrimitivesTest01.fs" />
     <Compile Include="xnabook1.fs" />
     <Compile Include="Program.fs" />
