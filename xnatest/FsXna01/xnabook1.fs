@@ -14,6 +14,8 @@ open Microsoft.Xna.Framework.Input
 open Microsoft.Xna.Framework.Storage
 open Microsoft.Xna.Framework.GamerServices
 
+open GeometryUtils
+
 type XnaSample01() as this = 
     inherit Game()
     
@@ -47,7 +49,9 @@ type XnaSample01() as this =
         base.GraphicsDevice.Clear(Color.CornflowerBlue)
         spriteBatch.Begin()
         //spriteBatch.Draw(texture2D, base.GraphicsDevice.Viewport.Bounds, Color.White)
-        spriteBatch.Draw(texture2D, Vector2.Zero, Color.White)
+        //spriteBatch.Draw(texture2D, Vector2.Zero, Color.White)
+        let rect = rectangle(10, 10, 100, 100)
+        spriteBatch.Draw(texture2D, rect, Color.White)
         spriteBatch.DrawString(sfont, "Foobaric tidings!", Vector2.Zero, Color.Black)
         spriteBatch.End()
 

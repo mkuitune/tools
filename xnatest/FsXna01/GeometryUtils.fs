@@ -11,3 +11,5 @@ let myVertexArray = [|vpc(Color.Red, v3(0,1,0));vpc(Color.Red, v3(0, 1, 0))|]
 
 let intToShort (ilist:int[]): int16 [] = [|for i in ilist -> int16 i|]
 
+let inline rectangle(x:^a,  y :^a, w:^a, h:^a) = Rectangle(int x, int y, int w, int h)
+

@@ -2,6 +2,22 @@
 
 (*
 #r @"C:\Program Files (x86)\MonoGame\v3.0\Assemblies\Windows\MonoGame.Framework.dll"
+open System.Collections.Generic
+module TT = 
+    type T(i:int) = 
+        let ii = i
+        do
+            printfn "Init t"
+        member x.I = ii
+                
+    let tcompare = 
+        { new IEqualityComparer<_> with
+            member x.Equals(a:T,b:T) = 
+                a = b
+            member x.GetHashCode(s:T) =
+                s.GetHashCode()}
+
+let s3 = HashSet<TT.T>(TT.tcompare);;
 *)
 
 open System
@@ -12,11 +28,12 @@ open Microsoft.Xna.Framework.Graphics
 open Microsoft.Xna.Framework.Input
 open Microsoft.Xna.Framework.Storage
 open Microsoft.Xna.Framework.GamerServices
-
+open System.Linq
 open GeometryUtils
 
 
 // TODO: 
+// 0. Model of render pipeline, 2d and 3d layers , selection and state sets
 // 1. store and loads models from scene
 // 2. Add grid background as workspace walls
 // 3. Arcball rotation
@@ -28,6 +45,7 @@ open GeometryUtils
 // 9. Mesh shape generators (cube, sphere, etc)
 // 10. Export to STL
 // 11. CSG operations on models
+// 12. Main thread polls input, worker thread renders. 
 
 type View() = 
     let mutable azx = 0. // z = r cos axy, x = r sin axy 
@@ -76,7 +94,6 @@ let drawWith(r:Renderable, v:View, m:Material, g:GraphicsDevice) =
     m.Effect.CurrentTechnique.Passes.[0].Apply()
     g.DrawPrimitives(PrimitiveType.TriangleList, 0, r.PrimitiveCount)
 
-
 // Store all the stuff that depedends on a valid graphics device here for 2d
 //type Engine2D(g:GraphicsDevice) = 
     //let 
@@ -84,7 +101,65 @@ let drawWith(r:Renderable, v:View, m:Material, g:GraphicsDevice) =
 type PointerPos(pos:Vector2, delta:Vector2) = 
     member m.Pos = pos
     member m.Delta = delta
-    member m.Next v = PointerPos(v, pos - v)
+    member m.Next v = PointerPos(v, v - pos)
+
+module Switch = 
+    type Key = Microsoft.Xna.Framework.Input.Keys
+    type SwitchState = | Pressed | Released
+    type SwitchId =
+        | Char of Key (* Can be separated to own enum if needed.*)
+        | Indexed of int (*E.g. with XNA mouse 0: left 1: right*)
+
+    module Pointer =
+        let Left = 0
+        let Right = 1
+
+    type Switch = {State:SwitchState; Id:SwitchId}
+    
+    type StateSet() = 
+        let mutable switches = new Dictionary<SwitchId, Switch>()
+        let mutable indexedDelta : Switch list = [] 
+        let mutable charDelta : Switch list = []
+
+        member x.BeginFrame() = 
+            indexedDelta <- []
+            charDelta <- []
+
+        member x.Update (sw:Switch) =
+            if not (switches.ContainsKey(sw.Id)) then
+               switches.Add(sw.Id, sw) 
+            else
+                let curval = switches.[sw.Id]
+                if curval.State <> sw.State then
+                    match sw.Id with
+                    | Indexed(_) -> indexedDelta <- sw :: indexedDelta
+                    | Char(_) -> charDelta <- sw :: charDelta
+                    switches.[sw.Id] <- sw
+
+        member x.CharDelta = charDelta
+        member x.IndexedDelta = indexedDelta
+
+        member x.Update(swl : Switch list) = swl |> List.iter (fun e -> x.Update(e))
+            
+        member x.Pressed (k:SwitchId) = if switches.ContainsKey(k) then match switches.[k].State with |Pressed -> true | _ -> false else false
+        member x.Pressed (ki:int) = x.Pressed(Indexed(ki))
+        member x.Pressed (k:Key) = x.Pressed(Char(k))
+
+let mouseToSwitches(ms:MouseState) = 
+    let bs = function
+    | Microsoft.Xna.Framework.Input.ButtonState.Pressed -> Switch.Pressed
+    | _ -> Switch.Released
+    let sw state id = {Switch.State = state; Switch.Id = Switch.Indexed(id)}
+    [(sw (ms.LeftButton |> bs) Switch.Pointer.Left); (sw (ms.RightButton |> bs) Switch.Pointer.Right)]
+
+let keyboardToSwitches(kb:KeyboardState) = 
+    let sw state id = {Switch.State = state; Switch.Id = Switch.Char(id)}
+    let allKeys = Enum.GetValues(typeof<Switch.Key>).Cast<Switch.Key>()
+    [for k in allKeys do 
+        match kb.IsKeyDown(k) with
+        | true -> yield (sw Switch.Pressed k)
+        | false -> yield(sw Switch.Released k)]
+        
 
 type PointerHandler() =
     let mutable pos = PointerPos(v2(0,0), v2(0,0))
@@ -95,27 +170,80 @@ type PointerHandler() =
         if pos.Delta <> v2(0,0) then
             printfn "%A %A" pos.Pos.X pos.Pos.Y
 
+// Generic asset manager
+type AssetManager(manager: ContentManager) = 
+    
+    member this.LoadTexture2D(name:string) =
+        manager.Load<Texture2D>(name)
+(*
+type HoverState =
+    |NonHovering
+    |Hovering
+    |Selected
+
+type ButtonState =
+    | ButtonDown
+    | ButtonPressed // Sudden change
+    | ButtonLifted
+    | ButtonUp
+*)
+
+// 2D buttons sliders etc
+type SpriteWidget(textureName:string, rect:Rectangle, manager:AssetManager) = 
+    let name = textureName
+    let bounds = rect 
+    let mutable texture : Texture2D = null 
+    //let mutable hoverState = NonHovering
+    do
+        texture <- manager.LoadTexture2D(name)
+      
+    member this.Contains(p:Vector2) =
+        bounds.Contains(p)
+
+    member this.DrawTo(batch:SpriteBatch) =
+        batch.Draw(texture, bounds, Color.White)        
+
+type UI2D() = 
+    let mutable buttons : SpriteWidget list = []
+    member this.Draw(time:GameTime, device:GraphicsDevice, batch:SpriteBatch) =
+        batch.Begin()
+        for b in buttons do
+            b.DrawTo(batch)
+        ()
+    (* Do mouse: check if mouse hovers over anything
+        member this.DoMouse(pos:Vector2) = 
+        false
+      *)
+
 // Store all the stuff that depedends on a valid graphics device here for 3d
-type ScreenApplication(g:GraphicsDevice) = 
+type ScreenApplication(g:GraphicsDevice, cont:ContentManager) = 
     let mutable view = View()
     let mutable renderable = Renderable(g)
     let mutable material = Material(g)
     let mutable pointer = new PointerHandler()
-
+    let mutable assetManager = AssetManager(cont)
+    let mutable ui2d = UI2D()
+    let mutable buttons = Switch.StateSet()
     member this.View = view
 
     member this.Draw(time:GameTime, device:GraphicsDevice) = 
         device.Clear(Color.CornflowerBlue)
         drawWith(renderable, view, material, g)
 
-    member this.Update(time:GameTime, mouseState:MouseState) = 
+    member this.Update(time:GameTime, mouseState:MouseState, keyState : KeyboardState) = 
         // Handle mouse input
         pointer.Next(mouseState)        
-
+        // Handle button input
+        let buttonEvents = (mouseToSwitches mouseState) @ (keyboardToSwitches keyState)
+        buttons.BeginFrame()
+        buttons.Update(buttonEvents)
+        if buttons.CharDelta <> [] then printfn "%A" buttons.CharDelta
+        if buttons.IndexedDelta <> [] then printfn "%A" buttons.IndexedDelta
         // Handle events
-        let factor = 0.1
-        view.RotateInplane (factor * (float pointer.Delta.X))
-        view.RotateOffplane (factor * (float pointer.Delta.Y))
+        if buttons.Pressed(Switch.Pointer.Left ) then
+            let factor = 0.1
+            view.RotateInplane (factor * (float pointer.Delta.X))
+            view.RotateOffplane (factor * (float pointer.Delta.Y))
 
 type ModelingTest02() as this = 
     inherit Game()
@@ -131,16 +259,17 @@ type ModelingTest02() as this =
         base.Initialize()
 
     override this.LoadContent() = 
-        d <-Some(ScreenApplication(this.GraphicsDevice))
+        d <-Some(ScreenApplication(this.GraphicsDevice, base.Content))
 
     override this.UnloadContent() = ()
 
     override this.Update(time:GameTime) = 
-        if Keyboard.GetState().IsKeyDown(Keys.Escape) then
+        let kbstate = Keyboard.GetState()
+        if kbstate.IsKeyDown(Keys.Escape) then
             base.Exit()
 
         match d with
-        | Some(e) ->e.Update(time, Mouse.GetState())
+        | Some(engine) ->engine.Update(time, Mouse.GetState(), kbstate)
         |_ ->()
 
 
