@@ -93,6 +93,7 @@ let drawWith(r:Renderable, v:View, m:Material, g:GraphicsDevice) =
     g.SetVertexBuffer(r.VertexBuffer)
     m.Effect.CurrentTechnique.Passes.[0].Apply()
     g.DrawPrimitives(PrimitiveType.TriangleList, 0, r.PrimitiveCount)
+    g.Flush()
 
 // Store all the stuff that depedends on a valid graphics device here for 2d
 //type Engine2D(g:GraphicsDevice) = 
@@ -172,10 +173,12 @@ type PointerHandler() =
 
 // Generic asset manager
 type AssetManager(manager: ContentManager) = 
-    
+    let tex2d = Dictionary<string, Texture2D>()
     member this.LoadTexture2D(name:string) =
-        manager.Load<Texture2D>(name)
-(*
+        if tex2d.ContainsKey(name) |> not then 
+            tex2d.[name] <- manager.Load<Texture2D>(name)
+        tex2d.[name]
+ (*
 type HoverState =
     |NonHovering
     |Hovering
@@ -188,27 +191,44 @@ type ButtonState =
     | ButtonUp
 *)
 
-// 2D buttons sliders etc
-type SpriteWidget(textureName:string, rect:Rectangle, manager:AssetManager) = 
+// 2D buttons sliders etc manages graphcis assets and geometric bounds
+type SpriteWidget(textureName:string, bgrName:string,rect:Rectangle, manager:AssetManager) = 
     let name = textureName
     let bounds = rect 
-    let mutable texture : Texture2D = null 
+    let mutable textures : Texture2D list = []
     //let mutable hoverState = NonHovering
     do
-        texture <- manager.LoadTexture2D(name)
+        textures <- [manager.LoadTexture2D(name)]
+        // Background first, render in order of loading
+        if bgrName <> "" then
+            textures <- manager.LoadTexture2D(bgrName) :: textures
       
     member this.Contains(p:Vector2) =
         bounds.Contains(p)
 
     member this.DrawTo(batch:SpriteBatch) =
-        batch.Draw(texture, bounds, Color.White)        
+        for t in textures do 
+            batch.Draw(t, bounds, Color.White)
 
-type UI2D() = 
+type UI2D(manager:AssetManager, g:GraphicsDevice) = 
+    let mutable manager = manager 
+    let mutable spriteBatch : SpriteBatch = null
     let mutable buttons : SpriteWidget list = []
-    member this.Draw(time:GameTime, device:GraphicsDevice, batch:SpriteBatch) =
-        batch.Begin()
+    do
+        spriteBatch <- new SpriteBatch(g)
+
+    member this.AddButton(textureName:string, bgr:string, rect:Rectangle) = 
+        buttons <- SpriteWidget(textureName, bgr, rect, manager) :: buttons
+    member this.Draw(time:GameTime, device:GraphicsDevice) =
+        //spriteBatch.Begin()
+        spriteBatch.Begin(SpriteSortMode.Deferred,
+            BlendState.NonPremultiplied,
+            SamplerState.AnisotropicClamp,
+            DepthStencilState.None,
+            RasterizerState.CullNone)
         for b in buttons do
-            b.DrawTo(batch)
+            b.DrawTo(spriteBatch)
+        spriteBatch.End()
         ()
     (* Do mouse: check if mouse hovers over anything
         member this.DoMouse(pos:Vector2) = 
@@ -222,13 +242,16 @@ type ScreenApplication(g:GraphicsDevice, cont:ContentManager) =
     let mutable material = Material(g)
     let mutable pointer = new PointerHandler()
     let mutable assetManager = AssetManager(cont)
-    let mutable ui2d = UI2D()
+    let mutable ui2d = UI2D(assetManager, g)
     let mutable buttons = Switch.StateSet()
+
+    member this.UI = ui2d
     member this.View = view
 
     member this.Draw(time:GameTime, device:GraphicsDevice) = 
         device.Clear(Color.CornflowerBlue)
         drawWith(renderable, view, material, g)
+        ui2d.Draw(time, device)
 
     member this.Update(time:GameTime, mouseState:MouseState, keyState : KeyboardState) = 
         // Handle mouse input
@@ -242,7 +265,7 @@ type ScreenApplication(g:GraphicsDevice, cont:ContentManager) =
         // Handle events
         if buttons.Pressed(Switch.Pointer.Left ) then
             let factor = 0.1
-            view.RotateInplane (factor * (float pointer.Delta.X))
+            view.RotateInplane (-factor * (float pointer.Delta.X))
             view.RotateOffplane (factor * (float pointer.Delta.Y))
 
 type ModelingTest02() as this = 
@@ -253,6 +276,14 @@ type ModelingTest02() as this =
     let mutable graphicsManager = new GraphicsDeviceManager(this)
     do
         base.Content.RootDirectory <- "Content"
+        base.IsMouseVisible <- true
+
+    member this.ConstructScene() = 
+        let loadall (app:ScreenApplication) =
+            app.UI.AddButton("icontest-ball", "icontest-background", Rectangle(0,0, 100, 100))
+        match d with
+        | Some(app) -> loadall app
+        | _ -> ()
 
     // Overrides
     override this.Initialize() =
@@ -260,6 +291,7 @@ type ModelingTest02() as this =
 
     override this.LoadContent() = 
         d <-Some(ScreenApplication(this.GraphicsDevice, base.Content))
+        this.ConstructScene()
 
     override this.UnloadContent() = ()
 
