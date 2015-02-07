@@ -34,9 +34,15 @@ open GeometryUtils
 
 // TODO: 
 // 0. Model of render pipeline, 2d and 3d layers , selection and state sets
+// 0.1 Widget hover, click and drag actions
 // 1. store and loads models from scene
+// 1.1 CSG tree
+// 1.2 Triangle meshes
+// 1.3 Generator objects wih parametric tesselation
 // 2. Add grid background as workspace walls
 // 3. Arcball rotation
+// 3.1 Scene navigation
+// 3.2 Zoom in/out
 // 4. Select objects
 // 5. Add transform widget for selected objects or workplane + uparrow visualization
 // 6. Add Grouping command for selected objects
@@ -54,6 +60,7 @@ type View() =
     
     let mutable up = v3(0,1,0) 
     let mutable target = v3(0, 0, 0)
+    let mutable aspectRatio = 1.0f
     //let mutable pos = v3(0, 0, r)
   
     // TODO: Rotate around y, rotate in plane 
@@ -62,14 +69,57 @@ type View() =
     member this.PosZ = r  * (cos azx) * (sin ay)
     member this.RotateOffplane doff =  ay <- ay + doff
     member this.RotateInplane dazx = azx <- (azx + dazx) % (Math.PI * 2.0)
-    member this.Projection(g:GraphicsDevice)  =  
-        Matrix.CreatePerspectiveFieldOfView(pi_4, g.Viewport.AspectRatio, 0.1f, 100.0f)
+    member this.Projection  =  
+        Matrix.CreatePerspectiveFieldOfView(pi_4, aspectRatio, 0.1f, 100.0f)
     member this.ViewMatrix = 
         let pos = v3(this.PosX, this.PosY, this.PosZ)
         Matrix.CreateLookAt(pos, target, up)
+    member this.SetAspectRatio (r:float32) = aspectRatio <- r
+
+module Presentation = 
+    type Primitive = |Triangle | Line
+
+/// IRenderable
+type IRenderable = 
+    abstract member VertexBuffer : VertexBuffer with get
+    abstract member PrimitiveCount: int with get
+    abstract member World : Matrix with get
+    abstract member Presentation : Presentation.Primitive
+
+// Grid to visualize scene limits
+type BackgroundGrid(g:GraphicsDevice) = 
+    let gridColor = Color.DarkSlateGray
+    let gv(x, y, z) = vpc(gridColor, v3(x, y, z))
+    let vertexType = typeof<VertexPositionColor>
+    let mutable vertexData = [|gv(0, 1, 0); gv(1, -1, 0); gv(1, -1, 0); gv(-1, -1, 0); gv(-1, -1, 0);gv(0, 1, 0)|] // todo gridlines
+    let mutable vertexBuffer = new VertexBuffer(g, vertexType, 3, BufferUsage.None)
+    let toWorld = Matrix.Identity //> world matrix
+
+    do
+        vertexBuffer.SetData<VertexPositionColor>(vertexData)
+
+    member this.UpdateData() = vertexBuffer.SetData<VertexPositionColor>(vertexData)
+    member this.BuildGrid() = 
+        // Compute
+        let dim = 1.0
+        let max = v3(dim, dim, dim)
+        let min = max * (-1.f)
+        ()
+//        let gridpoints = [||]
+
+    member this.VertexBuffer  = vertexBuffer
+    member this.PrimitiveCount=  vertexData.Length / 3
+    member this.World  = toWorld
+    member this.Presentation = Presentation.Line 
+    interface IRenderable with
+        member this.VertexBuffer with get() = this.VertexBuffer
+        member this.PrimitiveCount with get() =  this.PrimitiveCount
+        member this.World with get() = this.World
+        member this.Presentation with get() = this.Presentation
+
 
 //> Vertex source + vertex buffer ref
-type Renderable(g:GraphicsDevice) = 
+type RGBTriangle(g:GraphicsDevice) = 
     let mutable vertexData = [|vpc(Color.Red, v3(0, 1, 0)); vpc(Color.Green, v3(1, -1, 0)); vpc(Color.Blue, v3(-1, -1, 0))|]
     let vertexType = typeof<VertexPositionColor>
     let vertexBuffer = new VertexBuffer(g, vertexType, 3, BufferUsage.None)
@@ -78,21 +128,33 @@ type Renderable(g:GraphicsDevice) =
 
     do
         vertexBuffer.SetData<VertexPositionColor>(vertexData)
-    member this.VertexBuffer = vertexBuffer
-    member this.PrimitiveCount =  vertexData.Length / 3
-    member this.World = toWorld
 
-type Material(g:GraphicsDevice) = 
+    member this.VertexBuffer with get() = vertexBuffer
+    member this.PrimitiveCount with get() =  vertexData.Length / 3
+    member this.World with get() = toWorld
+    member this.Presentation = Presentation.Triangle
+    interface IRenderable with
+        member this.VertexBuffer with get() = this.VertexBuffer
+        member this.PrimitiveCount with get() =  this.PrimitiveCount
+        member this.World with get() = this.World
+        member this.Presentation with get() = this.Presentation
+
+type ShadingContext(g:GraphicsDevice) = 
     let mutable effect = new BasicEffect(g, VertexColorEnabled = true)
     member this.Effect = effect
+    member this.SetTransforms(r:IRenderable) (v:View) =  
+        effect.World <-r.World
+        effect.View <- v.ViewMatrix
+        effect.Projection <- v.Projection
 
-let drawWith(r:Renderable, v:View, m:Material, g:GraphicsDevice) = 
-    m.Effect.World <- r.World
-    m.Effect.View <- v.ViewMatrix
-    m.Effect.Projection <- v.Projection(g)
+let drawWith(r:IRenderable, v:View, s:ShadingContext, g:GraphicsDevice) = 
+    s.SetTransforms r v
     g.SetVertexBuffer(r.VertexBuffer)
-    m.Effect.CurrentTechnique.Passes.[0].Apply()
-    g.DrawPrimitives(PrimitiveType.TriangleList, 0, r.PrimitiveCount)
+    s.Effect.CurrentTechnique.Passes.[0].Apply()
+    match r.Presentation with
+    |Presentation.Line -> g.DrawPrimitives(PrimitiveType.LineList, 0, r.PrimitiveCount)
+    |Presentation.Triangle -> g.DrawPrimitives(PrimitiveType.TriangleList, 0, r.PrimitiveCount)
+//    g.DrawPrimitives(PrimitiveType.LineList, 0, r.PrimitiveCount)
     g.Flush()
 
 // Store all the stuff that depedends on a valid graphics device here for 2d
@@ -191,6 +253,7 @@ type ButtonState =
     | ButtonUp
 *)
 
+// TODO: Proper 2D scene graph for ui assets for parenting etc.
 // 2D buttons sliders etc manages graphcis assets and geometric bounds
 type SpriteWidget(textureName:string, bgrName:string,rect:Rectangle, manager:AssetManager) = 
     let name = textureName
@@ -235,25 +298,33 @@ type UI2D(manager:AssetManager, g:GraphicsDevice) =
         false
       *)
 
+
 // Store all the stuff that depedends on a valid graphics device here for 3d
 type ScreenApplication(g:GraphicsDevice, cont:ContentManager) = 
     let mutable view = View()
-    let mutable renderable = Renderable(g)
-    let mutable material = Material(g)
+    let mutable shadingContext = ShadingContext(g)
     let mutable pointer = new PointerHandler()
     let mutable assetManager = AssetManager(cont)
     let mutable ui2d = UI2D(assetManager, g)
     let mutable buttons = Switch.StateSet()
+   
+    // Content 
+    let mutable renderable = RGBTriangle(g)
+    let mutable grid = BackgroundGrid(g)
 
     member this.UI = ui2d
     member this.View = view
 
     member this.Draw(time:GameTime, device:GraphicsDevice) = 
-        device.Clear(Color.CornflowerBlue)
-        drawWith(renderable, view, material, g)
+        //device.Clear(Color.CornflowerBlue)
+        device.Clear(Color.LightSlateGray)
+        drawWith(renderable, view, shadingContext, g)
+        //drawWith(grid, view, shadingContext, g)
         ui2d.Draw(time, device)
 
     member this.Update(time:GameTime, mouseState:MouseState, keyState : KeyboardState) = 
+        // Update view parameters
+        view.SetAspectRatio(g.Viewport.AspectRatio)
         // Handle mouse input
         pointer.Next(mouseState)        
         // Handle button input
@@ -279,11 +350,12 @@ type ModelingTest02() as this =
         base.IsMouseVisible <- true
 
     member this.ConstructScene() = 
-        let loadall (app:ScreenApplication) =
-            app.UI.AddButton("icontest-ball", "icontest-background", Rectangle(0,0, 100, 100))
-        match d with
-        | Some(app) -> loadall app
-        | _ -> ()
+        ()
+        //let loadall (app:ScreenApplication) =
+        //    app.UI.AddButton("icontest-ball", "icontest-background", Rectangle(0,0, 100, 100))
+        //match d with
+        //| Some(app) -> loadall app
+        //| _ -> ()
 
     // Overrides
     override this.Initialize() =
